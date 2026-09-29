@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - APNU SEWA KENDRA</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; margin: 0; padding: 15px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { background: #1a73e8; color: white; padding: 15px 20px; border-radius: 8px; text-align: center; margin-bottom: 20px; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; border-left: 5px solid #f29900; }
+        .card.approved { border-left-color: #188038; }
+        .card.rejected { border-left-color: #d93025; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
+        .label { font-weight: bold; color: #555; }
+        input[type="file"] { width: 100%; padding: 8px; margin: 10px 0; border: 1px dashed #1a73e8; border-radius: 5px; background: #f8faff; box-sizing: border-box; }
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
+        .btn-approve { background: #188038; }
+        .btn-reject { background: #d93025; }
+        .status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; text-transform: uppercase; color: white; }
+        .badge-PENDING { background: #f29900; }
+        .badge-YES { background: #188038; }
+        .badge-NO { background: #d93025; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2 style="margin: 0;">APNU SEWA KENDRA - Admin Dashboard</h2>
+        <p style="margin: 5px 0 0 0; font-size: 13px;">Live Order & Direct Document Manager</p>
+    </div>
+
+    <div id="requests-list">
+        <p style="text-align: center; color: #666;">Data load ho raha hai...</p>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCDrVQM41SZoHAKEZDMtBYihJpUVZcJYx8",
+        authDomain: "apnu-sewa-kendra.firebaseapp.com",
+        databaseURL: "https://apnu-sewa-kendra-default-rtdb.firebaseio.com",
+        projectId: "apnu-sewa-kendra",
+        storageBucket: "apnu-sewa-kendra.firebasestorage.app",
+        messagingSenderId: "166197254815",
+        appId: "1:166197254815:web:377a2089cb3e71abdc20aa"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const requestsRef = ref(db, 'requests');
+    onValue(requestsRef, (snapshot) => {
+        const listContainer = document.getElementById('requests-list');
+        listContainer.innerHTML = '';
+
+        if (!snapshot.exists()) {
+            listContainer.innerHTML = '<p style="text-align: center;">Koi request nahi mili.</p>';
+            return;
+        }
+
+        const data = snapshot.val();
+        const keys = Object.keys(data).reverse();
+
+        keys.forEach(key => {
+            const item = data[key];
+            const status = item.status || 'PENDING';
+            
+            const card = document.createElement('div');
+            card.className = `card ${status === 'YES' ? 'approved' : status === 'NO' ? 'rejected' : ''}`;
+
+            card.innerHTML = `
+                <div class="row">
+                    <span><strong>${item.name}</strong> (${item.mobile})</span>
+                    <span class="status-badge badge-${status}">${status === 'YES' ? 'Approved' : status === 'NO' ? 'Rejected' : 'Pending'}</span>
+                </div>
+                <div class="row"><span class="label">Service:</span> <span>${item.doc}</span></div>
+                <div class="row"><span class="label">App ID:</span> <span>${item.appId}</span></div>
+                <div class="row"><span class="label">Txn ID:</span> <span>${item.txn}</span></div>
+                <div class="row"><span class="label">Amount:</span> <span>₹${item.price}</span></div>
+                <div class="row"><span class="label">Date:</span> <span>${item.date}</span></div>
+                
+                ${status === 'PENDING' ? `
+                    <label style="font-size:12px; font-weight:bold; color:#1a73e8; margin-top:8px; display:block;">Select Document (PDF/Image):</label>
+                    <input type="file" id="file_${key}" accept="application/pdf,image/*">
+                    <div class="btn-group">
+                        <button class="btn btn-approve" onclick="approveOrder('${key}')">Approve & Send Document</button>
+                        <button class="btn btn-reject" onclick="rejectOrder('${key}')">Reject</button>
+                    </div>
+                ` : item.fileName ? `
+                    <div class="row" style="margin-top:8px;"><span class="label">Sent File:</span> <span>${item.fileName}</span></div>
+                ` : ''}
+            `;
+
+            listContainer.appendChild(card);
+        });
+    });
+
+    window.approveOrder = function(key) {
+        const fileInput = document.getElementById(`file_${key}`);
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            alert("Kripya pehle customer ka Document (PDF/Image) select karein!");
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const fileBase64 = e.target.result;
+            
+            update(ref(db, 'requests/' + key), {
+                status: "YES",
+                docData: fileBase64,
+                fileName: file.name
+            }).then(() => {
+                alert("Document successfully customer ke phone par bhej diya gaya!");
+            }).catch((err) => {
+                console.error(err);
+                alert("Error: File size jyada bada hai. Kripya 2MB se kam ki file upload karein.");
+            });
+        };
+
+        reader.readAsDataURL(file);
+    };
+
+    window.rejectOrder = function(key) {
+        if(confirm("Kya aap ise reject karna chahte hain?")) {
+            update(ref(db, 'requests/' + key), {
+                status: "NO"
+            });
+        }
+    };
+</script>
+
+</body>
+</html>
