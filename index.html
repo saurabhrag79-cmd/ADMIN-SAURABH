@@ -6,8 +6,8 @@
     <title>Admin Dashboard - APNU SEWA KENDRA</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; margin: 0; padding: 15px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .header { background: #1a73e8; color: white; padding: 15px 20px; border-radius: 8px; text-align: center; margin-bottom: 20px; }
+        .container { max-width: 800px; margin: 0 auto; display: none; }
+        .header { background: #1a73e8; color: white; padding: 15px 20px; border-radius: 8px; text-align: center; margin-bottom: 20px; position: relative; }
         .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; border-left: 5px solid #f29900; }
         .card.approved { border-left-color: #188038; }
         .card.rejected { border-left-color: #d93025; }
@@ -22,14 +22,71 @@
         .badge-PENDING { background: #f29900; }
         .badge-YES { background: #188038; }
         .badge-NO { background: #d93025; }
+
+        /* Login Screen */
+        #login-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #f4f6f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .login-box {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            text-align: center;
+            max-width: 340px;
+            width: 90%;
+        }
+        .login-box h3 { margin-top: 0; color: #1a73e8; }
+        .login-box input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .login-box button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #login-error { color: #d93025; font-size: 13px; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
 
-<div class="container">
+<!-- Login Modal -->
+<div id="login-screen">
+    <div class="login-box">
+        <h3>Admin Login</h3>
+        <p style="font-size: 13px; color: #666;">APNU SEWA KENDRA Admin Login</p>
+        <input type="email" id="admin-email" placeholder="Admin Email ID">
+        <input type="password" id="admin-pass" placeholder="Password">
+        <button id="login-btn">Secure Login</button>
+        <div id="login-error"></div>
+    </div>
+</div>
+
+<!-- Main Dashboard -->
+<div class="container" id="main-dashboard">
     <div class="header">
         <h2 style="margin: 0;">APNU SEWA KENDRA - Admin Dashboard</h2>
         <p style="margin: 5px 0 0 0; font-size: 13px;">Live Order & Direct Document Manager</p>
+        <button id="logout-btn" style="margin-top: 10px; background: #d93025; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">Logout</button>
     </div>
 
     <div id="requests-list">
@@ -39,6 +96,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -52,54 +110,101 @@
     };
 
     const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
     const db = getDatabase(app);
 
-    const requestsRef = ref(db, 'requests');
-    onValue(requestsRef, (snapshot) => {
-        const listContainer = document.getElementById('requests-list');
-        listContainer.innerHTML = '';
+    const loginScreen = document.getElementById('login-screen');
+    const mainDashboard = document.getElementById('main-dashboard');
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const loginError = document.getElementById('login-error');
 
-        if (!snapshot.exists()) {
-            listContainer.innerHTML = '<p style="text-align: center;">Koi request nahi mili.</p>';
+    // Auto Check Login Status
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            loginScreen.style.display = 'none';
+            mainDashboard.style.display = 'block';
+            loadData();
+        } else {
+            loginScreen.style.display = 'flex';
+            mainDashboard.style.display = 'none';
+        }
+    });
+
+    // Login Action
+    loginBtn.addEventListener('click', () => {
+        const email = document.getElementById('admin-email').value.trim();
+        const pass = document.getElementById('admin-pass').value;
+
+        loginError.style.display = 'none';
+
+        if(!email || !pass) {
+            loginError.innerText = "Email aur Password dono bharein!";
+            loginError.style.display = 'block';
             return;
         }
 
-        const data = snapshot.val();
-        const keys = Object.keys(data).reverse();
-
-        keys.forEach(key => {
-            const item = data[key];
-            const status = item.status || 'PENDING';
-            
-            const card = document.createElement('div');
-            card.className = `card ${status === 'YES' ? 'approved' : status === 'NO' ? 'rejected' : ''}`;
-
-            card.innerHTML = `
-                <div class="row">
-                    <span><strong>${item.name}</strong> (${item.mobile})</span>
-                    <span class="status-badge badge-${status}">${status === 'YES' ? 'Approved' : status === 'NO' ? 'Rejected' : 'Pending'}</span>
-                </div>
-                <div class="row"><span class="label">Service:</span> <span>${item.doc}</span></div>
-                <div class="row"><span class="label">App ID:</span> <span>${item.appId}</span></div>
-                <div class="row"><span class="label">Txn ID:</span> <span>${item.txn}</span></div>
-                <div class="row"><span class="label">Amount:</span> <span>₹${item.price}</span></div>
-                <div class="row"><span class="label">Date:</span> <span>${item.date}</span></div>
-                
-                ${status === 'PENDING' ? `
-                    <label style="font-size:12px; font-weight:bold; color:#1a73e8; margin-top:8px; display:block;">Select Document (PDF/Image):</label>
-                    <input type="file" id="file_${key}" accept="application/pdf,image/*">
-                    <div class="btn-group">
-                        <button class="btn btn-approve" onclick="approveOrder('${key}')">Approve & Send Document</button>
-                        <button class="btn btn-reject" onclick="rejectOrder('${key}')">Reject</button>
-                    </div>
-                ` : item.fileName ? `
-                    <div class="row" style="margin-top:8px;"><span class="label">Sent File:</span> <span>${item.fileName}</span></div>
-                ` : ''}
-            `;
-
-            listContainer.appendChild(card);
-        });
+        signInWithEmailAndPassword(auth, email, pass)
+            .catch((error) => {
+                loginError.innerText = "Galat Email ya Password!";
+                loginError.style.display = 'block';
+            });
     });
+
+    // Logout Action
+    logoutBtn.addEventListener('click', () => {
+        signOut(auth);
+    });
+
+    // Load Live Requests Data
+    function loadData() {
+        const requestsRef = ref(db, 'requests');
+        onValue(requestsRef, (snapshot) => {
+            const listContainer = document.getElementById('requests-list');
+            listContainer.innerHTML = '';
+
+            if (!snapshot.exists()) {
+                listContainer.innerHTML = '<p style="text-align: center;">Koi request nahi mili.</p>';
+                return;
+            }
+
+            const data = snapshot.val();
+            const keys = Object.keys(data).reverse();
+
+            keys.forEach(key => {
+                const item = data[key];
+                const status = item.status || 'PENDING';
+                
+                const card = document.createElement('div');
+                card.className = `card ${status === 'YES' ? 'approved' : status === 'NO' ? 'rejected' : ''}`;
+
+                card.innerHTML = `
+                    <div class="row">
+                        <span><strong>${item.name || ''}</strong> (${item.mobile || ''})</span>
+                        <span class="status-badge badge-${status}">${status === 'YES' ? 'Approved' : status === 'NO' ? 'Rejected' : 'Pending'}</span>
+                    </div>
+                    <div class="row"><span class="label">Service:</span> <span>${item.doc || ''}</span></div>
+                    <div class="row"><span class="label">App ID:</span> <span>${item.appId || ''}</span></div>
+                    <div class="row"><span class="label">Txn ID:</span> <span>${item.txn || ''}</span></div>
+                    <div class="row"><span class="label">Amount:</span> <span>₹${item.price || ''}</span></div>
+                    <div class="row"><span class="label">Date:</span> <span>${item.date || ''}</span></div>
+                    
+                    ${status === 'PENDING' ? `
+                        <label style="font-size:12px; font-weight:bold; color:#1a73e8; margin-top:8px; display:block;">Select Document (PDF/Image):</label>
+                        <input type="file" id="file_${key}" accept="application/pdf,image/*">
+                        <div class="btn-group">
+                            <button class="btn btn-approve" onclick="approveOrder('${key}')">Approve & Send Document</button>
+                            <button class="btn btn-reject" onclick="rejectOrder('${key}')">Reject</button>
+                        </div>
+                    ` : item.fileName ? `
+                        <div class="row" style="margin-top:8px;"><span class="label">Sent File:</span> <span>${item.fileName}</span></div>
+                    ` : ''}
+                `;
+
+                listContainer.appendChild(card);
+            });
+        });
+    }
 
     window.approveOrder = function(key) {
         const fileInput = document.getElementById(`file_${key}`);
